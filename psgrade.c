@@ -161,7 +161,7 @@ void JIG_Task(void)
         if (Endpoint_IsReadWriteAllowed() && state == p5_challenged && expire == 0) 
 	{
 		if ( bytes_in < 64) {
-			Endpoint_Write_PStream_LE(&jig_challenge_res[bytes_in], 8, NO_STREAM_CALLBACK);
+			Endpoint_Write_Stream_LE(&jig_challenge_res[bytes_in], 8, NO_STREAM_CALLBACK);
 			Endpoint_ClearIN();
 			bytes_in += 8;
 			if ( bytes_in >= 64) {
