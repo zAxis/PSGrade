@@ -1,4 +1,4 @@
-/*  HMAC-SHA-1 - an implementation of the HMAC message authentication
+/*   HMAC-SHA-1 - an implementation of the HMAC message authentication
     Version as of March 4th 2007
     
     Copyright (C) 2007 CHZ-Soft, Christian Zietz, <czietz@gmx.net>
