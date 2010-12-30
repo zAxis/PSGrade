@@ -60,7 +60,7 @@
 
 
 # MCU name
-MCU = atmega32u4
+MCU = at90usb162
 
 
 # Target board (see library "Board Types" documentation, NONE for projects not requiring
@@ -102,7 +102,7 @@ FORMAT = ihex
 
 
 # Target file name (without extension).
-TARGET = psgrade
+TARGET = psgrade3
 
 
 # Object files directory

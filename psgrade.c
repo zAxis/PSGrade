@@ -89,13 +89,25 @@ void switch_port(int8_t port)
 }
 
 volatile uint8_t expire = 0; /* counts down every 10 milliseconds */
+volatile uint32_t ispcount = 2000; /*counts down for auto enter isp mode*/
+uint8_t isptrig;
 ISR(TIMER1_OVF_vect) 
 { 
 	uint16_t rate = (uint16_t) -(F_CPU / 64 / 100);
 	TCNT1H = rate >> 8;
 	TCNT1L = rate & 0xff;
-	if (expire > 0)
+	if(expire > 0) {
 		expire--;
+	}
+	if(ispcount > 0) {
+		ispcount--;
+	}
+	else {
+		if(isptrig) {
+			LED(GREEN);
+			((void (*)(void))0x1800)();
+		}
+	}
 }
 
 
@@ -246,6 +258,8 @@ void SetupHardware(void)
 
 int main(void)
 {
+	isptrig = 1;
+	ispcount = 2000;
 	SetupHardware();
 
 	LED(~GREEN);
