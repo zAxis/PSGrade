@@ -162,7 +162,7 @@ void JIG_Task(void)
 			//Check dongle_id. If it should be revoked a new one is generated.
 			int i;
 			for(i = 0; i < sizeof(usb_dongle_revoke_list); i++) {
-				if(usb_dongle_revoke_list[i] == (((dongle_id[0] << 8) & 0xFF) & (dongle_id[1] & 0xFF)) ) {
+				if(usb_dongle_revoke_list[i] == (((dongle_id[0] << 8) & 0xFF00) ^ (dongle_id[1] & 0xFF)) ) {
 					i = 0;
 					dongle_id[0] = rand();
 					dongle_id[1] = rand();
