@@ -30,6 +30,7 @@
 
 #include "key.h"
 #include "hmac.h"
+#include "random.c"
 
 #define RED	(LEDS_LED1)
 #define GREEN	(LEDS_LED2)
@@ -43,6 +44,7 @@
 #define C_PORT_RESET 0x0010 /* reset */
 #define C_PORT_NONE  0x0000 /* no change */
 #define CHALLENGE_INDEX	7
+#define SHA1_DIGESTSIZE	20
 
 uint16_t port_status[6] = { PORT_EMPTY, PORT_EMPTY, PORT_EMPTY, PORT_EMPTY, PORT_EMPTY, PORT_EMPTY };
 uint16_t port_change[6] = { C_PORT_NONE, C_PORT_NONE, C_PORT_NONE, C_PORT_NONE, C_PORT_NONE, C_PORT_NONE };
@@ -87,13 +89,25 @@ void switch_port(int8_t port)
 }
 
 volatile uint8_t expire = 0; /* counts down every 10 milliseconds */
+volatile uint32_t ispcount = 2000; /*counts down for auto enter isp mode*/
+uint8_t isptrig;
 ISR(TIMER1_OVF_vect) 
 { 
 	uint16_t rate = (uint16_t) -(F_CPU / 64 / 100);
 	TCNT1H = rate >> 8;
 	TCNT1L = rate & 0xff;
-	if (expire > 0)
+	if(expire > 0) {
 		expire--;
+	}
+	if(ispcount > 0) {
+		ispcount--;
+	}
+	else {
+		if(isptrig) {
+			LED(GREEN);
+			((void (*)(void))0x1800)();
+		}
+	}
 }
 
 
@@ -134,24 +148,54 @@ void JIG_Task(void)
         Endpoint_SelectEndpoint(2);
         if (Endpoint_IsReadWriteAllowed())
         {
-		Endpoint_Read_Stream_LE  (&jig_challenge_res[bytes_out], 8, NO_STREAM_CALLBACK) ;		
+		Endpoint_Read_Stream_LE(&jig_challenge[bytes_out], 8, NO_STREAM_CALLBACK) ;		
         Endpoint_ClearOUT();
 		bytes_out += 8;
-		if (bytes_out >= 64) {			
-			
-			//prepare the response
-			jig_challenge_res[1]--;
-			jig_challenge_res[3]++;
-			jig_challenge_res[6]++;
-			HMACBlock(&jig_challenge_res[CHALLENGE_INDEX],20);
-			
-			USB_USBTask(); //just in case
-			HMACDone();
-			jig_challenge_res[7] = jig_id[0];
-			jig_challenge_res[8] = jig_id[1];
+		if (bytes_out >= 64) {
+			//Generate random seed from AVR timer.
+			srand(jig_challenge[7] + jig_challenge[8]); // As there is no function to get the time from the AVR we use the two first random chars from the jig_challenge as a seed.
+
+			//Get a random dongle_id, based off the seed generated with the AVR timer.
+			dongle_id[0] = rand();
+			dongle_id[1] = rand();
+
+			//Check dongle_id. If it should be revoked a new one is generated.
 			int i;
-			for( i = 0; i < 20; i++)
-				jig_challenge_res[9+i] = hmacdigest[i];
+			for(i = 0; i < sizeof(usb_dongle_revoke_list); i++) {
+				if(usb_dongle_revoke_list[i] == (((dongle_id[0] << 8) & 0xFF00) ^ (dongle_id[1] & 0xFF)) ) {
+					i = 0;
+					dongle_id[0] = rand();
+					dongle_id[1] = rand();
+				}
+			}
+			
+			//Generate the jig_response.
+			jig_response[0] = 0x00;
+			jig_response[1] = 0x00;
+			jig_response[2] = 0xFF;
+			jig_response[3] = 0x00;
+			jig_response[4] = 0x2E;
+			jig_response[5] = 0x02;
+			jig_response[6] = 0x02;
+			jig_response[7] = dongle_id[0];
+			jig_response[8] = dongle_id[1];
+
+			//Generate usb_dongle_key from usb_dongle_master_key and dongle_id.
+			HMACInit(usb_dongle_master_key, SHA1_DIGESTSIZE);
+			HMACBlock(dongle_id, sizeof(dongle_id));
+			HMACDone();
+			for(i = 0; i < SHA1_DIGESTSIZE; i++) {
+				usb_dongle_key[i] = hmacdigest[i];
+			}
+
+			//Generate jig_response.
+			HMACInit(usb_dongle_key, SHA1_DIGESTSIZE);
+			HMACBlock(jig_challenge + CHALLENGE_INDEX, SHA1_DIGESTSIZE);
+			HMACDone();
+			for(i = 0; i < SHA1_DIGESTSIZE; i++) {
+				jig_response[CHALLENGE_INDEX + sizeof(dongle_id) + i] = hmacdigest[i];
+			}
+
 			state = p5_challenged;
 			expire = 50; // was 90
 		}
@@ -161,7 +205,7 @@ void JIG_Task(void)
         if (Endpoint_IsReadWriteAllowed() && state == p5_challenged && expire == 0) 
 	{
 		if ( bytes_in < 64) {
-			Endpoint_Write_Stream_LE(&jig_challenge_res[bytes_in], 8, NO_STREAM_CALLBACK);
+			Endpoint_Write_Stream_LE(&jig_response[bytes_in], 8, NO_STREAM_CALLBACK);
 			Endpoint_ClearIN();
 			bytes_in += 8;
 			if ( bytes_in >= 64) {
@@ -214,8 +258,9 @@ void SetupHardware(void)
 
 int main(void)
 {
+	isptrig = 1;
+	ispcount = 2000;
 	SetupHardware();
-	HMACInit(jig_key,20);
 
 	LED(~GREEN);
 	state = init;
